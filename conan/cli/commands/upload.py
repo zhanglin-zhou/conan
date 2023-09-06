@@ -73,6 +73,8 @@ def upload(conan_api: ConanAPI, parser, *args):
     parser.add_argument("-m", "--metadata", action='append',
                         help='Upload the metadata, even if the package is already in the server and '
                              'not uploaded')
+    parser.add_argument('--binary-compression-format', choices=['gzip', 'zstd'], default='gzip',
+                        help="Specify the compression format used for the upload")
 
     args = parser.parse_args(*args)
 
@@ -102,7 +104,8 @@ def upload(conan_api: ConanAPI, parser, *args):
             conan_api.cache.check_integrity(package_list)
         # Check if the recipes/packages are in the remote
         conan_api.upload.check_upstream(package_list, remote, enabled_remotes, args.force)
-        conan_api.upload.prepare(package_list, enabled_remotes, args.metadata)
+        conan_api.upload.prepare(package_list, enabled_remotes, args.binary_compression_format,
+                                 args.metadata)
 
         if not args.dry_run:
             conan_api.upload.upload(package_list, remote)
