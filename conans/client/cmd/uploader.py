@@ -1,5 +1,6 @@
 import os
 import shutil
+import subprocess
 import time
 
 from conan.internal.conan_app import ConanApp
@@ -78,7 +79,7 @@ class PackagePreparator:
         self._app = app
         self._output = ConanOutput()
 
-    def prepare(self, upload_bundle, enabled_remotes):
+    def prepare(self, upload_bundle, enabled_remotes, binary_compression_format):
         self._output.info("Preparing artifacts to upload")
         for ref, bundle in upload_bundle.refs().items():
             layout = self._app.cache.recipe_layout(ref)
@@ -89,7 +90,8 @@ class PackagePreparator:
                 self._prepare_recipe(ref, bundle, conanfile, enabled_remotes)
             for pref, prev_bundle in upload_bundle.prefs(ref, bundle).items():
                 if prev_bundle.get("upload"):
-                    self._prepare_package(pref, prev_bundle)
+                    self._prepare_package(pref, prev_bundle,
+                                          binary_compression_format)
 
     def _prepare_recipe(self, ref, ref_bundle, conanfile, remotes):
         """ do a bunch of things that are necessary before actually executing the upload:
@@ -155,21 +157,29 @@ class PackagePreparator:
         add_tgz(EXPORT_SOURCES_TGZ_NAME, src_files, "Compressing recipe sources...")
         return result
 
-    def _prepare_package(self, pref, prev_bundle):
+    def _prepare_package(self, pref, prev_bundle, compression_format):
         pkg_layout = self._app.cache.pkg_layout(pref)
         if pkg_layout.package_is_dirty():
             raise ConanException(f"Package {pref} is corrupted, aborting upload.\n"
                                  f"Remove it with 'conan remove {pref}'")
-        cache_files = self._compress_package_files(pkg_layout, pref)
+        cache_files = self._compress_package_files(pkg_layout, pref, compression_format)
         prev_bundle["files"] = cache_files
 
-    def _compress_package_files(self, layout, pref):
+    def _compress_package_files(self, layout, pref, compression_format):
         download_pkg_folder = layout.download_package()
-        package_tgz = os.path.join(download_pkg_folder, PACKAGE_TGZ_NAME)
-        if is_dirty(package_tgz):
-            self._output.warning("%s: Removing %s, marked as dirty" % (str(pref), PACKAGE_TGZ_NAME))
-            os.remove(package_tgz)
-            clean_dirty(package_tgz)
+        if compression_format == 'gzip':
+            package_file_name = PACKAGE_TGZ_NAME
+            package_file = os.path.join(download_pkg_folder, PACKAGE_TGZ_NAME)
+        elif compression_format == 'zstd':
+            package_file_name = os.path.splitext(PACKAGE_TGZ_NAME)[0] + '.tar.zst'
+            package_file = os.path.join(download_pkg_folder, package_file_name)
+        else:
+            raise ConanException(f"Unsupported compression level {compression_format}")
+
+        if is_dirty(package_file):
+            self._output.warning("%s: Removing %s, marked as dirty" % (str(pref), package_file_name))
+            os.remove(package_file)
+            clean_dirty(package_file)
 
         # Get all the files in that directory
         # existing package, will use short paths if defined
@@ -190,17 +200,27 @@ class PackagePreparator:
         files.pop(CONANINFO)
         files.pop(CONAN_MANIFEST)
 
-        if not os.path.isfile(package_tgz):
+        if os.path.isfile(package_file):
+            self._output.info(f"Not writing '{package_file}' because it already exists.")
+        else:
             if self._output and not self._output.is_terminal:
                 self._output.info("Compressing package...")
-            tgz_files = {f: path for f, path in files.items()}
-            compresslevel = self._app.cache.new_config.get("core.gzip:compresslevel", check_type=int)
-            tgz_path = compress_files(tgz_files, PACKAGE_TGZ_NAME, download_pkg_folder,
-                                      compresslevel=compresslevel)
-            assert tgz_path == package_tgz
-            assert os.path.exists(package_tgz)
 
-        return {PACKAGE_TGZ_NAME: package_tgz,
+            if compression_format == 'gzip':
+                source_files = {f: path for f, path in files.items()}
+                compresslevel = self._app.cache.new_config.get("core.gzip:compresslevel", check_type=int)
+                compressed_path = compress_files(source_files, PACKAGE_TGZ_NAME, download_pkg_folder,
+                                                 compresslevel=compresslevel)
+            elif compression_format == 'zstd':
+                source_files = [x for x in sorted(os.listdir(package_folder))
+                                if x not in [CONANINFO, CONAN_MANIFEST]]
+                compressed_path = zstd_compress_files(package_folder, source_files,
+                                                      package_file_name, download_pkg_folder)
+
+            assert compressed_path == package_file
+            assert os.path.exists(package_file)
+
+        return {package_file_name: package_file,
                 CONANINFO: os.path.join(download_pkg_folder, CONANINFO),
                 CONAN_MANIFEST: os.path.join(download_pkg_folder, CONAN_MANIFEST)}
 
@@ -264,3 +284,42 @@ def compress_files(files, name, dest_dir, compresslevel=None, ref=None):
     duration = time.time() - t1
     ConanOutput().debug(f"{name} compressed in {duration} time")
     return tgz_path
+
+
+def zstd_compress_files(source_folder, files, name, dest_dir):
+    t1 = time.time()
+
+    dest_path = os.path.join(dest_dir, name)
+    dest_path_relative = os.path.relpath(dest_path, source_folder)
+    tar_binary = "tar.exe" if os.name == "nt" else "tar"
+    zstd_binary = "zstd.exe" if os.name == "nt" else "zstd"
+    tar_path = shutil.which(tar_binary)
+    zstd_path = shutil.which(zstd_binary)
+
+    for binary, path in [(tar_binary, tar_path), (zstd_binary, zstd_path)]:
+        if not path:
+            raise ConanException(f"Could not find `{binary}`. Is it in the PATH?")
+
+    tar_version_output = subprocess.check_output([tar_path, "--version"]).decode()
+    is_bsd_tar = "bsdtar" in tar_version_output
+    ConanOutput().info("%s tar detected" % ("BSD" if is_bsd_tar else "GNU"))
+
+    if is_bsd_tar and os.name == "nt":
+        raise ConanException("BSD tar was found on Windows, but Conan only currently "
+                             "supports GNU tar for zstd compression. To resolve this, "
+                             "install msys2, put the installed msys2 directory first "
+                             "in your PATH environment variable, and try again.")
+
+    if is_bsd_tar:
+        command = [tar_path, "--use-compress-program=%s" % zstd_path,
+                   "-cf", dest_path_relative] + files
+    else:
+        # Use --zstd to request zstd compression.
+        command = [tar_path, "--zstd", "-cf", dest_path_relative] + files
+
+    ConanOutput().info(f"Running command `{command}` from folder `{source_folder}`")
+    subprocess.check_call(command, cwd=source_folder)
+
+    duration = time.time() - t1
+    ConanOutput().debug(f"{name} compressed in {duration} time")
+    return dest_path
