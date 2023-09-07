@@ -1,5 +1,6 @@
 import os
 import shutil
+import tarfile
 from typing import List
 
 from requests.exceptions import ConnectionError
@@ -259,8 +260,23 @@ def uncompress_file(src_path, dest_folder, scope=None):
         if big_file:
             hs = human_size(filesize)
             ConanOutput(scope=scope).info(f"Decompressing {hs} {os.path.basename(src_path)}")
+
         with open(src_path, mode='rb') as file_handler:
-            tar_extract(file_handler, dest_folder)
+            if src_path.endswith(".tar.zst"):
+                # Decompress using python-zstandard and tarfile.
+                try:
+                    import zstandard
+                except ModuleNotFoundError as e:
+                    raise ConanException("zstd decompression requires python-zstandard. "
+                                         "Run `pip install python-zstandard` and retry. "
+                                         f"Exception details: {e}")
+
+                dctx = zstandard.ZstdDecompressor()
+                stream_reader = dctx.stream_reader(file_handler)
+                with tarfile.open(fileobj=stream_reader, mode='r|') as the_tar:
+                    the_tar.extractall(dest_folder)
+            else:
+                tar_extract(file_handler, dest_folder)
     except Exception as e:
         error_msg = "Error while extracting downloaded file '%s' to %s\n%s\n"\
                     % (src_path, dest_folder, str(e))
