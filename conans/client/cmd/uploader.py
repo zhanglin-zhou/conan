@@ -266,7 +266,7 @@ class UploadExecutor:
         self._output.debug(f"Upload {pref} in {duration} time")
 
 
-def compress_files(files, name, dest_dir, compresslevel=None, ref=None, compressformat=None):
+def compress_files(files, name, dest_dir, compressformat=None, compresslevel=None, ref=None):
     t1 = time.time()
     tar_path = os.path.join(dest_dir, name)
     ConanOutput(scope=str(ref)).info(f"Compressing {name}")
