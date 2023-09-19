@@ -270,9 +270,7 @@ def unzip(conanfile, filename, destination=".", keep_permissions=False, pattern=
     """
 
     output = conanfile.output
-    if (filename.endswith(".tar.gz") or filename.endswith(".tgz") or
-            filename.endswith(".tbz2") or filename.endswith(".tar.bz2") or
-            filename.endswith(".tar")):
+    if filename.endswith((".tar.gz", ".tgz", ".tbz2", ".tar.bz2", ".tar.xz", ".txz", ".tar.zst")):
         return untargz(filename, destination, pattern, strip_root)
     if filename.endswith(".gz"):
         target_name = filename[:-3] if destination == "." else destination
@@ -283,8 +281,6 @@ def unzip(conanfile, filename, destination=".", keep_permissions=False, pattern=
             with open(target_name, "wb") as fout:
                 shutil.copyfileobj(fin, fout)
         return
-    if filename.endswith(".tar.xz") or filename.endswith(".txz"):
-        return untargz(filename, destination, pattern, strip_root)
 
     import zipfile
     full_path = os.path.normpath(os.path.join(os.getcwd(), destination))
@@ -355,7 +351,23 @@ def unzip(conanfile, filename, destination=".", keep_permissions=False, pattern=
 def untargz(filename, destination=".", pattern=None, strip_root=False):
     # NOT EXPOSED at `conan.tools.files` but used in tests
     import tarfile
-    with tarfile.TarFile.open(filename, 'r:*') as tarredgzippedFile:
+
+    is_tar_zst = filename.endswith(".tar.zst")
+    if is_tar_zst:
+        import zstandard
+        zst_file_handler = open(filename, mode='rb')
+        dctx = zstandard.ZstdDecompressor()
+
+        tar_filename = None
+        tar_fileobj = dctx.stream_reader(zst_file_handler)
+        tar_mode = 'r|'
+    else:
+        tar_filename = filename
+        tar_fileobj = None
+        tar_mode = 'r:*'
+
+    with tarfile.TarFile.open(name=tar_filename, mode=tar_mode,
+                              fileobj=tar_fileobj) as tarredgzippedFile:
         if not pattern and not strip_root:
             tarredgzippedFile.extractall(destination)
         else:
@@ -383,6 +395,9 @@ def untargz(filename, destination=".", pattern=None, strip_root=False):
                 members = list(filter(lambda m: fnmatch(m.name, pattern),
                                       tarredgzippedFile.getmembers()))
             tarredgzippedFile.extractall(destination, members=members)
+
+    if is_tar_zst:
+        tar_fileobj.close()
 
 
 def check_sha1(conanfile, file_path, signature):
