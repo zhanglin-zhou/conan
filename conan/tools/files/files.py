@@ -359,6 +359,12 @@ def untargz(filename, destination=".", pattern=None, strip_root=False):
         dctx = zstandard.ZstdDecompressor()
 
         tar_filename = None
+        if pattern or strip_root:
+            # The below function can issue backward seeks in this case, which are not allowed by
+            # the ZstdDecompressionReader class.
+            raise ConanException('Untarring .tar.zst files using `pattern` and/or '
+                                 '`strip_root=True` is not supported')
+
         tar_fileobj = dctx.stream_reader(zst_file_handler)
         tar_mode = 'r|'
     else:
@@ -396,7 +402,7 @@ def untargz(filename, destination=".", pattern=None, strip_root=False):
                                       tarredgzippedFile.getmembers()))
             tarredgzippedFile.extractall(destination, members=members)
 
-    if is_tar_zst:
+    if tar_fileobj:
         tar_fileobj.close()
 
 
