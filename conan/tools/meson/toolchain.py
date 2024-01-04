@@ -192,10 +192,10 @@ class MesonToolchain(object):
         # FIXME: Should we use the new tools.build:compiler_executables and avoid buildenv?
         #: Defines the Meson ``c_ld`` variable. Defaulted to ``CC_LD`` or ``LD`` build
         #: environment value
-        self.c_ld = build_env.get("CC_LD") or build_env.get("LD")
+        self.c_ld = build_env.get("CC_LD")
         #: Defines the Meson ``cpp_ld`` variable. Defaulted to ``CXX_LD`` or ``LD`` build
         #: environment value
-        self.cpp_ld = build_env.get("CXX_LD") or build_env.get("LD")
+        self.cpp_ld = build_env.get("CXX_LD")
         #: Defines the Meson ``ar`` variable. Defaulted to ``AR`` build environment value
         self.ar = build_env.get("AR")
         #: Defines the Meson ``strip`` variable. Defaulted to ``STRIP`` build environment value
