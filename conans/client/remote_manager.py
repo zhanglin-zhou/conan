@@ -111,7 +111,7 @@ class RemoteManager(object):
         tgz_file = zipped_files[EXPORT_SOURCES_TGZ_NAME]
         uncompress_file(tgz_file, export_sources_folder, scope=str(ref))
 
-    def get_package(self, pref, remote, metadata=None):
+    def get_package(self, pref, remote, metadata=None, progress=None):
         output = ConanOutput(scope=str(pref.ref))
         output.info("Retrieving package %s from remote '%s' " % (pref.package_id, remote.name))
 
@@ -120,7 +120,7 @@ class RemoteManager(object):
         pkg_layout = self._cache.get_or_create_pkg_layout(pref)
         pkg_layout.package_remove()  # Remove first the destination folder
         with pkg_layout.set_dirty_context_manager():
-            self._get_package(pkg_layout, pref, remote, output, metadata)
+            self._get_package(pkg_layout, pref, remote, output, metadata, progress=progress)
 
     def get_package_metadata(self, pref, remote, metadata):
         """
@@ -141,14 +141,14 @@ class RemoteManager(object):
             output.error(f"Exception: {type(e)} {str(e)}", error_type="exception")
             raise
 
-    def _get_package(self, layout, pref, remote, scoped_output, metadata):
+    def _get_package(self, layout, pref, remote, scoped_output, metadata, progress=None):
         try:
             assert pref.revision is not None
 
             download_pkg_folder = layout.download_package()
             # Download files to the pkg_tgz folder, not to the final one
             zipped_files = self._call_remote(remote, "get_package", pref, download_pkg_folder,
-                                             metadata, only_metadata=False)
+                                             metadata, only_metadata=False, progress=progress)
             zipped_files = {k: v for k, v in zipped_files.items() if not k.startswith(METADATA)}
             # quick server package integrity check:
             for f in ("conaninfo.txt", "conanmanifest.txt"):

@@ -1,5 +1,6 @@
 import os
 import shutil
+from functools import partial
 from multiprocessing.pool import ThreadPool
 
 from conan.api.output import ConanOutput
@@ -15,6 +16,15 @@ from conans.model.build_info import CppInfo, MockInfoProperty
 from conans.model.package_ref import PkgReference
 from conans.paths import CONANINFO
 from conans.util.files import clean_dirty, is_dirty, mkdir, rmdir, save, set_dirty, chdir
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    TaskID,
+    TextColumn,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+)
 
 
 def build_id(conan_file):
@@ -162,7 +172,6 @@ class _PackageBuilder(object):
 
         return node.pref
 
-
 class BinaryInstaller:
     """ main responsible of retrieving binary packages or building them from source
     locally in case they are not found in remotes
@@ -273,25 +282,38 @@ class BinaryInstaller:
         if not downloads:
             return
 
-        download_count = len(downloads)
-        plural = 's' if download_count != 1 else ''
-        ConanOutput().subtitle(f"Downloading {download_count} package{plural}")
-        parallel = self._global_conf.get("core.download:parallel", check_type=int)
-        if parallel is not None:
-            ConanOutput().info("Downloading binary packages in %s parallel threads" % parallel)
-            thread_pool = ThreadPool(parallel)
-            thread_pool.map(self._download_pkg, downloads)
-            thread_pool.close()
-            thread_pool.join()
-        else:
-            for node in downloads:
-                self._download_pkg(node)
+        progress = Progress(
+            TextColumn("[bold blue]{task.fields[scope]}", justify="right"),
+            TextColumn("{task.fields[filename]}", justify="right"),
+            BarColumn(bar_width=None),
+            "[progress.percentage]{task.percentage:>3.1f}%",
+            "•",
+            DownloadColumn(),
+            "•",
+            TransferSpeedColumn(),
+            "•",
+            TimeRemainingColumn(),
+        )
+        with progress:
+            download_count = len(downloads)
+            plural = 's' if download_count != 1 else ''
+            parallel = self._global_conf.get("core.download:parallel", check_type=int)
+            parallel = 4
+            if parallel is not None:
+                ConanOutput().info("Downloading binary packages in %s parallel threads" % parallel)
+                thread_pool = ThreadPool(parallel)
+                thread_pool.map(partial(self._download_pkg, progress=progress), downloads)
+                thread_pool.close()
+                thread_pool.join()
+            else:
+                for node in downloads:
+                    self._download_pkg(node, progress=progress)
 
-    def _download_pkg(self, package):
+    def _download_pkg(self, package, progress=None):
         node = package.nodes[0]
         assert node.pref.revision is not None
         assert node.pref.timestamp is not None
-        self._remote_manager.get_package(node.pref, node.binary_remote)
+        self._remote_manager.get_package(node.pref, node.binary_remote, progress=progress)
 
     def _handle_package(self, package, install_reference, handled_count, total_count):
         if package.binary == BINARY_PLATFORM:

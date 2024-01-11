@@ -74,7 +74,7 @@ class RestV2Methods(RestCommonMethods):
         ret = {fn: os.path.join(dest_folder, fn) for fn in files}
         return ret
 
-    def get_package(self, pref, dest_folder, metadata, only_metadata):
+    def get_package(self, pref, dest_folder, metadata, only_metadata, progress=None):
         url = self.router.package_snapshot(pref)
         data = self._get_file_list_json(url)
         server_files = data["files"]
@@ -90,7 +90,7 @@ class RestV2Methods(RestCommonMethods):
             files = [f for f in server_files if any(f.startswith(m) for m in accepted_files)]
             # If we didn't indicated reference, server got the latest, use absolute now, it's safer
             urls = {fn: self.router.package_file(pref, fn) for fn in files}
-            self._download_and_save_files(urls, dest_folder, files, scope=str(pref.ref))
+            self._download_and_save_files(urls, dest_folder, files, scope=str(pref.ref), progress=progress)
             result.update({fn: os.path.join(dest_folder, fn) for fn in files})
 
         if metadata:
@@ -159,7 +159,7 @@ class RestV2Methods(RestCommonMethods):
                                  % ", ".join(failed))
 
     def _download_and_save_files(self, urls, dest_folder, files, parallel=False, scope=None,
-                                 metadata=False):
+                                 metadata=False, progress=None):
         # Take advantage of filenames ordering, so that conan_package.tgz and conan_export.tgz
         # can be < conanfile, conaninfo, and sent always the last, so smaller files go first
         retry = self._config.get("core.download:retry", check_type=int, default=2)
@@ -181,7 +181,7 @@ class RestV2Methods(RestCommonMethods):
             else:
                 downloader.download(url=resource_url, file_path=abs_path, auth=self.auth,
                                     verify_ssl=self.verify_ssl, retry=retry, retry_wait=retry_wait,
-                                    metadata=metadata)
+                                    metadata=metadata, progress=progress)
         for t in threads:
             t.join()
         for t in threads:  # Need to join all before raising errors
