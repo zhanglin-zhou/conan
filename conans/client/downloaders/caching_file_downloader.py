@@ -162,10 +162,11 @@ class ConanInternalCacheDownloader:
         self._file_downloader = FileDownloader(requester, scope=scope)
         self._scope = scope
 
-    def download(self, url, file_path, auth, verify_ssl, retry, retry_wait, metadata=False):
+    def download(self, url, file_path, auth, verify_ssl, retry, retry_wait, metadata=False, progress=None):
         if not self._download_cache or metadata:  # Metadata not cached and can be overwritten
             self._file_downloader.download(url, file_path, retry=retry, retry_wait=retry_wait,
-                                           verify_ssl=verify_ssl, auth=auth, overwrite=metadata)
+                                           verify_ssl=verify_ssl, auth=auth, overwrite=metadata,
+                                           progress=progress)
             return
 
         download_cache = DownloadCache(self._download_cache)
@@ -177,7 +178,7 @@ class ConanInternalCacheDownloader:
                 with set_dirty_context_manager(cached_path):
                     self._file_downloader.download(url, cached_path, retry=retry,
                                                    retry_wait=retry_wait, verify_ssl=verify_ssl,
-                                                   auth=auth, overwrite=False)
+                                                   auth=auth, overwrite=False, progress=progress)
             else:  # Found in cache!
                 total_length = os.path.getsize(cached_path)
                 is_large_file = total_length > 10000000  # 10 MB

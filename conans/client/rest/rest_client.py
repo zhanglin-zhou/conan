@@ -65,8 +65,8 @@ class RestApiClient(object):
     def get_recipe_sources(self, ref, dest_folder):
         return self._get_api().get_recipe_sources(ref, dest_folder)
 
-    def get_package(self, pref, dest_folder, metadata, only_metadata):
-        return self._get_api().get_package(pref, dest_folder, metadata, only_metadata)
+    def get_package(self, pref, dest_folder, metadata, only_metadata, progress=None):
+        return self._get_api().get_package(pref, dest_folder, metadata, only_metadata, progress=progress)
 
     def upload_recipe(self, ref, files_to_upload):
         return self._get_api().upload_recipe(ref, files_to_upload)
