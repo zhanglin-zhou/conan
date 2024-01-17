@@ -268,7 +268,6 @@ def uncompress_file(src_path, dest_folder, scope=None, progress=None):
         task_id = None
         if progress:
             task_id = progress.add_task("uncompress", scope=scope, filename=os.path.basename(src_path), start=False)
-            progress.update(task_id, advance=0, total=filesize)
             progress.start_task(task_id)
 
         with open(src_path, mode='rb') as file_handler:
@@ -281,6 +280,10 @@ def uncompress_file(src_path, dest_folder, scope=None, progress=None):
                     the_tar.extractall(dest_folder)
             else:
                 tar_extract(file_handler, dest_folder)
+
+        if progress:
+            progress.update(task_id, visible=False)
+            progress.stop_task(task_id)
     except Exception as e:
         error_msg = "Error while extracting downloaded file '%s' to %s\n%s\n"\
                     % (src_path, dest_folder, str(e))
