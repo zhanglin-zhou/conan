@@ -19,7 +19,7 @@ from conans.model.recipe_ref import RecipeReference
 from conans.util.files import rmdir, human_size
 from conans.paths import EXPORT_SOURCES_TGZ_NAME, EXPORT_TGZ_NAME, PACKAGE_TGZ_NAME, PACKAGE_TZSTD_NAME
 from conans.util.files import mkdir, tar_extract
-
+from rich.progress import wrap_file
 
 class RemoteManager(object):
     """ Will handle the remotes to get recipes, packages etc """
@@ -163,7 +163,7 @@ class RemoteManager(object):
             package_file = zipped_files.pop(package_file, None)
             package_folder = layout.package()
             t1 = time.time()
-            uncompress_file(package_file, package_folder, scope=str(pref.ref))
+            uncompress_file(package_file, package_folder, scope=str(pref.ref), progress=progress)
             duration = time.time() - t1
             scoped_output.debug(f"Decompressed {package_file} in {duration} seconds")
             mkdir(package_folder)  # Just in case it doesn't exist, because uncompress did nothing
@@ -258,7 +258,7 @@ class RemoteManager(object):
             raise ConanException(exc, remote=remote)
 
 
-def uncompress_file(src_path, dest_folder, scope=None):
+def uncompress_file(src_path, dest_folder, scope=None, progress=None):
     try:
         filesize = os.path.getsize(src_path)
         big_file = filesize > 10000000  # 10 MB
@@ -266,10 +266,18 @@ def uncompress_file(src_path, dest_folder, scope=None):
             hs = human_size(filesize)
             ConanOutput(scope=scope).info(f"Decompressing {hs} {os.path.basename(src_path)}")
 
+        task_id = None
+        if progress:
+            task_id = progress.add_task("uncompress", scope=scope, filename=os.path.basename(src_path), start=False)
+            progress.update(task_id, advance=0, total=filesize)
+            progress.start_task(task_id)
+
         with open(src_path, mode='rb') as file_handler:
             if src_path.endswith(".tar.zst"):
                 dctx = zstandard.ZstdDecompressor()
                 stream_reader = dctx.stream_reader(file_handler)
+                if progress:
+                    stream_reader = wrap_file(stream_reader, total=filesize, task_id)
                 with tarfile.open(fileobj=stream_reader, mode='r|') as the_tar:
                     the_tar.extractall(dest_folder)
             else:
