@@ -277,7 +277,7 @@ def uncompress_file(src_path, dest_folder, scope=None, progress=None):
                 dctx = zstandard.ZstdDecompressor()
                 stream_reader = dctx.stream_reader(file_handler)
                 if progress:
-                    stream_reader = wrap_file(stream_reader, total=filesize, task_id)
+                    stream_reader = wrap_file(stream_reader, total=filesize, task_id=task_id)
                 with tarfile.open(fileobj=stream_reader, mode='r|') as the_tar:
                     the_tar.extractall(dest_folder)
             else:
