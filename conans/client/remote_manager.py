@@ -19,7 +19,6 @@ from conans.model.recipe_ref import RecipeReference
 from conans.util.files import rmdir, human_size
 from conans.paths import EXPORT_SOURCES_TGZ_NAME, EXPORT_TGZ_NAME, PACKAGE_TGZ_NAME, PACKAGE_TZSTD_NAME
 from conans.util.files import mkdir, tar_extract
-from rich.progress import wrap_file
 
 class RemoteManager(object):
     """ Will handle the remotes to get recipes, packages etc """
@@ -277,7 +276,7 @@ def uncompress_file(src_path, dest_folder, scope=None, progress=None):
                 dctx = zstandard.ZstdDecompressor()
                 stream_reader = dctx.stream_reader(file_handler)
                 if progress:
-                    stream_reader = wrap_file(stream_reader, total=filesize, task_id=task_id)
+                    stream_reader = progress.wrap_file(stream_reader, total=filesize, task_id=task_id)
                 with tarfile.open(fileobj=stream_reader, mode='r|') as the_tar:
                     the_tar.extractall(dest_folder)
             else:
