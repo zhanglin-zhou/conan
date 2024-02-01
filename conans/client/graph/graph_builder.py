@@ -37,7 +37,7 @@ class DepsGraphBuilder(object):
         # print("Loading graph")
         dep_graph = DepsGraph()
 
-        self._prepare_node(root_node, profile_host, profile_build, Options())
+        self._prepare_node(None, root_node, profile_host, profile_build, Options())
         self._initialize_requires(root_node, dep_graph, graph_lock, profile_build, profile_host)
         dep_graph.add_node(root_node)
 
@@ -142,7 +142,7 @@ class DepsGraphBuilder(object):
                 raise GraphConflictError(node, require, prev_node, prev_require, base_previous)
 
     @staticmethod
-    def _prepare_node(node, profile_host, profile_build, down_options):
+    def _prepare_node(prev_node, node, profile_host, profile_build, down_options):
 
         # basic node configuration: calling configure() and requirements()
         conanfile, ref = node.conanfile, node.ref
@@ -158,6 +158,9 @@ class DepsGraphBuilder(object):
                 for tool_require in tool_requires:  # Do the override
                     if str(tool_require) == str(ref):  # FIXME: Ugly str comparison
                         continue  # avoid self-loop of build-requires in build context
+                    # avoid loop by adding tool from profile
+                    if prev_node and prev_node.check_loops(tool_require, CONTEXT_BUILD):
+                        continue
                     node.conanfile.requires.tool_require(tool_require.repr_notime(),
                                                          raise_if_duplicated=False)
 
@@ -346,7 +349,7 @@ class DepsGraphBuilder(object):
             else:
                 down_options = Options(options_values=node.conanfile.default_build_options)
 
-        self._prepare_node(new_node, profile_host, profile_build, down_options)
+        self._prepare_node(node, new_node, profile_host, profile_build, down_options)
         require.process_package_type(node, new_node)
         graph.add_node(new_node)
         graph.add_edge(node, new_node, require)
@@ -354,7 +357,7 @@ class DepsGraphBuilder(object):
             raise GraphRuntimeError(node, new_node)
 
         # This is necessary to prevent infinite loops even when visibility is False
-        ancestor = node.check_loops(new_node)
+        ancestor = node.check_loops(new_node.ref, new_node.context)
         if ancestor is not None:
             raise GraphLoopError(new_node, require, ancestor)
 

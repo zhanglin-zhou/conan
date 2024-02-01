@@ -162,15 +162,15 @@ class Node(object):
         source_node = dependant.src
         return source_node.check_downstream_exists(down_require) or result
 
-    def check_loops(self, new_node):
-        if self.ref == new_node.ref and self.context == new_node.context:
+    def check_loops(self, ref, context):
+        if self.ref == ref and self.context == context:
             return self
         if not self.dependants:
             return
         assert len(self.dependants) == 1
         dependant = self.dependants[0]
         source_node = dependant.src
-        return source_node.check_loops(new_node)
+        return source_node.check_loops(ref, context)
 
     @property
     def package_id(self):
